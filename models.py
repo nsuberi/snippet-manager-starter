@@ -1,3 +1,4 @@
+import secrets
 from datetime import datetime
 from flask_sqlalchemy import SQLAlchemy
 
@@ -72,3 +73,57 @@ def get_or_create_tag(name):
         tag = Tag(name=name.lower().strip())
         db.session.add(tag)
     return tag
+
+
+class ApiKey(db.Model):
+    """API key for authenticating requests."""
+
+    __tablename__ = 'api_keys'
+
+    id = db.Column(db.Integer, primary_key=True)
+    key = db.Column(db.String(64), unique=True, nullable=False)
+    name = db.Column(db.String(100), nullable=False)  # Description of key owner/purpose
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    last_used_at = db.Column(db.DateTime, nullable=True)
+
+    @staticmethod
+    def generate_key():
+        """Generate a secure random API key."""
+        return secrets.token_hex(32)
+
+    @staticmethod
+    def create(name):
+        """Create a new API key with the given name."""
+        api_key = ApiKey(
+            key=ApiKey.generate_key(),
+            name=name
+        )
+        db.session.add(api_key)
+        db.session.commit()
+        return api_key
+
+    @staticmethod
+    def validate(key):
+        """Validate an API key and return the ApiKey object if valid."""
+        if not key:
+            return None
+        api_key = ApiKey.query.filter_by(key=key, is_active=True).first()
+        if api_key:
+            api_key.last_used_at = datetime.utcnow()
+            db.session.commit()
+        return api_key
+
+    def to_dict(self):
+        """Convert to dictionary (excludes full key for security)."""
+        return {
+            'id': self.id,
+            'name': self.name,
+            'key_preview': self.key[:8] + '...',
+            'is_active': self.is_active,
+            'created_at': self.created_at.isoformat() + 'Z' if self.created_at else None,
+            'last_used_at': self.last_used_at.isoformat() + 'Z' if self.last_used_at else None,
+        }
+
+    def __repr__(self):
+        return f'<ApiKey {self.name}>'

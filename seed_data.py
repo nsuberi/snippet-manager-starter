@@ -12,7 +12,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from app import app, db
-from models import Snippet, Tag, get_or_create_tag
+from models import Snippet, Tag, ApiKey, get_or_create_tag
 
 
 SAMPLE_SNIPPETS = [
@@ -478,9 +478,17 @@ def seed_database():
 
     db.session.commit()
 
+    # Create a default API key for testing
+    print("Creating test API key...")
+    test_key = ApiKey.create("Test API Key")
+    print(f"\n{'='*60}")
+    print("TEST API KEY (save this - it won't be shown again!):")
+    print(f"  {test_key.key}")
+    print(f"{'='*60}\n")
+
     snippet_count = Snippet.query.count()
     tag_count = Tag.query.count()
-    print(f"Done! Created {snippet_count} snippets and {tag_count} tags.")
+    print(f"Done! Created {snippet_count} snippets, {tag_count} tags, and 1 API key.")
 
 
 def reset_database():

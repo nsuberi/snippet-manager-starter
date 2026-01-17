@@ -1,13 +1,17 @@
 """
 API Tests for Snippet Manager
 
-These tests demonstrate that all API endpoints work without authentication.
+These tests verify that:
+1. Read operations work without authentication
+2. Write operations require valid API key authentication
+3. Invalid/missing API keys are properly rejected
+
 Run with: pytest test_api.py -v
 """
 
 import pytest
 from app import app, db
-from models import Snippet, Tag
+from models import Snippet, Tag, ApiKey
 
 
 @pytest.fixture
@@ -28,6 +32,14 @@ def client():
         db.drop_all()
 
 
+@pytest.fixture
+def api_key(client):
+    """Create and return a valid API key for authenticated requests."""
+    with app.app_context():
+        key = ApiKey.create("Test Key")
+        return key.key
+
+
 def _seed_test_data():
     """Add minimal test data."""
     tag_python = Tag(name='python')
@@ -43,6 +55,11 @@ def _seed_test_data():
     snippet.tags.append(tag_python)
     db.session.add(snippet)
     db.session.commit()
+
+
+def auth_headers(api_key):
+    """Return headers dict with API key for authenticated requests."""
+    return {'X-API-Key': api_key}
 
 
 # ---------------------------------------------------------------------------
@@ -69,11 +86,11 @@ class TestHealthCheck:
 
 
 # ---------------------------------------------------------------------------
-# List Snippets Tests
+# List Snippets Tests (Public - No Auth Required)
 # ---------------------------------------------------------------------------
 
 class TestListSnippets:
-    """Test GET /api/snippets endpoint."""
+    """Test GET /api/snippets endpoint - public, no auth needed."""
 
     def test_list_snippets_no_auth_required(self, client):
         """Anyone can list snippets without authentication."""
@@ -117,11 +134,11 @@ class TestListSnippets:
 
 
 # ---------------------------------------------------------------------------
-# Get Single Snippet Tests
+# Get Single Snippet Tests (Public - No Auth Required)
 # ---------------------------------------------------------------------------
 
 class TestGetSnippet:
-    """Test GET /api/snippets/<id> endpoint."""
+    """Test GET /api/snippets/<id> endpoint - public, no auth needed."""
 
     def test_get_snippet_no_auth_required(self, client):
         """Anyone can get a snippet without authentication."""
@@ -140,19 +157,22 @@ class TestGetSnippet:
 
 
 # ---------------------------------------------------------------------------
-# Create Snippet Tests
+# Create Snippet Tests (Auth Required)
 # ---------------------------------------------------------------------------
 
 class TestCreateSnippet:
-    """Test POST /api/snippets endpoint."""
+    """Test POST /api/snippets endpoint - requires API key."""
 
-    def test_create_snippet_no_auth_required(self, client):
-        """Anyone can create a snippet without authentication."""
-        response = client.post('/api/snippets', json={
-            'title': 'New Snippet',
-            'code': 'console.log("test");',
-            'language': 'javascript'
-        })
+    def test_create_snippet_with_valid_api_key(self, client, api_key):
+        """Can create a snippet with valid API key."""
+        response = client.post('/api/snippets',
+            headers=auth_headers(api_key),
+            json={
+                'title': 'New Snippet',
+                'code': 'console.log("test");',
+                'language': 'javascript'
+            }
+        )
         assert response.status_code == 201
 
         data = response.get_json()
@@ -160,95 +180,146 @@ class TestCreateSnippet:
         assert data['language'] == 'javascript'
         assert 'id' in data
 
-    def test_create_snippet_with_tags(self, client):
+    def test_create_snippet_with_tags(self, client, api_key):
         """Can create a snippet with tags."""
-        response = client.post('/api/snippets', json={
-            'title': 'Tagged Snippet',
-            'code': 'x = 1',
-            'language': 'python',
-            'tags': ['test', 'example']
-        })
+        response = client.post('/api/snippets',
+            headers=auth_headers(api_key),
+            json={
+                'title': 'Tagged Snippet',
+                'code': 'x = 1',
+                'language': 'python',
+                'tags': ['test', 'example']
+            }
+        )
         assert response.status_code == 201
 
         data = response.get_json()
         assert 'test' in data['tags']
         assert 'example' in data['tags']
 
-    def test_create_snippet_requires_title(self, client):
-        """Creating a snippet without title returns 400."""
+    def test_create_snippet_without_api_key_returns_401(self, client):
+        """Creating a snippet without API key returns 401."""
         response = client.post('/api/snippets', json={
-            'code': 'some code'
+            'title': 'No Auth',
+            'code': 'test'
         })
+        assert response.status_code == 401
+        assert 'API key required' in response.get_json()['error']
+
+    def test_create_snippet_with_invalid_api_key_returns_401(self, client):
+        """Creating a snippet with invalid API key returns 401."""
+        response = client.post('/api/snippets',
+            headers={'X-API-Key': 'invalid-key-12345'},
+            json={
+                'title': 'Bad Auth',
+                'code': 'test'
+            }
+        )
+        assert response.status_code == 401
+        assert 'Invalid API key' in response.get_json()['error']
+
+    def test_create_snippet_requires_title(self, client, api_key):
+        """Creating a snippet without title returns 400."""
+        response = client.post('/api/snippets',
+            headers=auth_headers(api_key),
+            json={'code': 'some code'}
+        )
         assert response.status_code == 400
         assert 'Title is required' in response.get_json()['error']
 
-    def test_create_snippet_requires_code(self, client):
+    def test_create_snippet_requires_code(self, client, api_key):
         """Creating a snippet without code returns 400."""
-        response = client.post('/api/snippets', json={
-            'title': 'No Code'
-        })
+        response = client.post('/api/snippets',
+            headers=auth_headers(api_key),
+            json={'title': 'No Code'}
+        )
         assert response.status_code == 400
         assert 'Code is required' in response.get_json()['error']
 
 
 # ---------------------------------------------------------------------------
-# Update Snippet Tests
+# Update Snippet Tests (Auth Required)
 # ---------------------------------------------------------------------------
 
 class TestUpdateSnippet:
-    """Test PUT /api/snippets/<id> endpoint."""
+    """Test PUT /api/snippets/<id> endpoint - requires API key."""
 
-    def test_update_snippet_no_auth_required(self, client):
-        """Anyone can update a snippet without authentication."""
-        response = client.put('/api/snippets/1', json={
-            'title': 'Updated Title'
-        })
+    def test_update_snippet_with_valid_api_key(self, client, api_key):
+        """Can update a snippet with valid API key."""
+        response = client.put('/api/snippets/1',
+            headers=auth_headers(api_key),
+            json={'title': 'Updated Title'}
+        )
         assert response.status_code == 200
 
         data = response.get_json()
         assert data['title'] == 'Updated Title'
 
-    def test_update_snippet_partial(self, client):
+    def test_update_snippet_partial(self, client, api_key):
         """Can update only specific fields."""
         # Get original
         original = client.get('/api/snippets/1').get_json()
 
         # Update only title
-        response = client.put('/api/snippets/1', json={
-            'title': 'New Title Only'
-        })
+        response = client.put('/api/snippets/1',
+            headers=auth_headers(api_key),
+            json={'title': 'New Title Only'}
+        )
         assert response.status_code == 200
 
         data = response.get_json()
         assert data['title'] == 'New Title Only'
         assert data['code'] == original['code']  # Unchanged
 
-    def test_update_nonexistent_snippet_returns_404(self, client):
-        """Updating a non-existent snippet returns 404."""
-        response = client.put('/api/snippets/9999', json={
-            'title': 'Does Not Exist'
+    def test_update_snippet_without_api_key_returns_401(self, client):
+        """Updating a snippet without API key returns 401."""
+        response = client.put('/api/snippets/1', json={
+            'title': 'No Auth Update'
         })
+        assert response.status_code == 401
+        assert 'API key required' in response.get_json()['error']
+
+    def test_update_snippet_with_invalid_api_key_returns_401(self, client):
+        """Updating a snippet with invalid API key returns 401."""
+        response = client.put('/api/snippets/1',
+            headers={'X-API-Key': 'invalid-key'},
+            json={'title': 'Bad Auth'}
+        )
+        assert response.status_code == 401
+        assert 'Invalid API key' in response.get_json()['error']
+
+    def test_update_nonexistent_snippet_returns_404(self, client, api_key):
+        """Updating a non-existent snippet returns 404."""
+        response = client.put('/api/snippets/9999',
+            headers=auth_headers(api_key),
+            json={'title': 'Does Not Exist'}
+        )
         assert response.status_code == 404
 
 
 # ---------------------------------------------------------------------------
-# Delete Snippet Tests
+# Delete Snippet Tests (Auth Required)
 # ---------------------------------------------------------------------------
 
 class TestDeleteSnippet:
-    """Test DELETE /api/snippets/<id> endpoint."""
+    """Test DELETE /api/snippets/<id> endpoint - requires API key."""
 
-    def test_delete_snippet_no_auth_required(self, client):
-        """Anyone can delete a snippet without authentication."""
+    def test_delete_snippet_with_valid_api_key(self, client, api_key):
+        """Can delete a snippet with valid API key."""
         # Create a snippet to delete
-        create_response = client.post('/api/snippets', json={
-            'title': 'To Delete',
-            'code': 'delete me'
-        })
+        create_response = client.post('/api/snippets',
+            headers=auth_headers(api_key),
+            json={
+                'title': 'To Delete',
+                'code': 'delete me'
+            }
+        )
         snippet_id = create_response.get_json()['id']
 
         # Delete it
-        response = client.delete(f'/api/snippets/{snippet_id}')
+        response = client.delete(f'/api/snippets/{snippet_id}',
+            headers=auth_headers(api_key)
+        )
         assert response.status_code == 200
         assert 'deleted' in response.get_json()['message'].lower()
 
@@ -256,18 +327,34 @@ class TestDeleteSnippet:
         get_response = client.get(f'/api/snippets/{snippet_id}')
         assert get_response.status_code == 404
 
-    def test_delete_nonexistent_snippet_returns_404(self, client):
+    def test_delete_snippet_without_api_key_returns_401(self, client):
+        """Deleting a snippet without API key returns 401."""
+        response = client.delete('/api/snippets/1')
+        assert response.status_code == 401
+        assert 'API key required' in response.get_json()['error']
+
+    def test_delete_snippet_with_invalid_api_key_returns_401(self, client):
+        """Deleting a snippet with invalid API key returns 401."""
+        response = client.delete('/api/snippets/1',
+            headers={'X-API-Key': 'bad-key'}
+        )
+        assert response.status_code == 401
+        assert 'Invalid API key' in response.get_json()['error']
+
+    def test_delete_nonexistent_snippet_returns_404(self, client, api_key):
         """Deleting a non-existent snippet returns 404."""
-        response = client.delete('/api/snippets/9999')
+        response = client.delete('/api/snippets/9999',
+            headers=auth_headers(api_key)
+        )
         assert response.status_code == 404
 
 
 # ---------------------------------------------------------------------------
-# Languages & Tags Tests
+# Languages & Tags Tests (Public - No Auth Required)
 # ---------------------------------------------------------------------------
 
 class TestLanguagesAndTags:
-    """Test metadata endpoints."""
+    """Test metadata endpoints - public, no auth needed."""
 
     def test_list_languages_no_auth_required(self, client):
         """Anyone can list languages without authentication."""
@@ -289,47 +376,56 @@ class TestLanguagesAndTags:
 
 
 # ---------------------------------------------------------------------------
-# Security Concern Demonstration
+# Authentication Security Tests
 # ---------------------------------------------------------------------------
 
-class TestNoAuthenticationRequired:
+class TestAuthenticationSecurity:
     """
-    These tests explicitly demonstrate that NO authentication is required.
-    This is the security gap that students will fix by adding API key auth.
+    These tests verify that API key authentication is properly enforced.
+    Write operations are protected while read operations remain public.
     """
 
-    def test_can_read_all_data_without_auth(self, client):
-        """Anyone can read all snippets - no auth headers needed."""
-        response = client.get('/api/snippets')
-        assert response.status_code == 200
-        # No Authorization header, no API key, nothing - still works!
+    def test_read_operations_are_public(self, client):
+        """GET endpoints work without authentication."""
+        # All these should work without auth
+        assert client.get('/api/snippets').status_code == 200
+        assert client.get('/api/snippets/1').status_code == 200
+        assert client.get('/api/languages').status_code == 200
+        assert client.get('/api/tags').status_code == 200
 
-    def test_can_create_data_without_auth(self, client):
-        """Anyone can create snippets - potential spam/abuse vector."""
-        response = client.post('/api/snippets', json={
-            'title': 'Anonymous Creation',
-            'code': 'anyone can add this'
-        })
+    def test_write_operations_require_auth(self, client):
+        """POST/PUT/DELETE endpoints require authentication."""
+        # All these should return 401 without auth
+        assert client.post('/api/snippets', json={
+            'title': 'Test', 'code': 'x'
+        }).status_code == 401
+
+        assert client.put('/api/snippets/1', json={
+            'title': 'Test'
+        }).status_code == 401
+
+        assert client.delete('/api/snippets/1').status_code == 401
+
+    def test_valid_api_key_grants_access(self, client, api_key):
+        """Valid API key allows write operations."""
+        response = client.post('/api/snippets',
+            headers=auth_headers(api_key),
+            json={'title': 'Auth Test', 'code': 'pass'}
+        )
         assert response.status_code == 201
-        # No way to track who created this!
 
-    def test_can_modify_data_without_auth(self, client):
-        """Anyone can modify any snippet - no ownership checks."""
-        response = client.put('/api/snippets/1', json={
-            'title': 'Vandalized!'
-        })
-        assert response.status_code == 200
-        # Anyone can modify anyone's snippets!
+    def test_inactive_api_key_is_rejected(self, client):
+        """Deactivated API keys are rejected."""
+        with app.app_context():
+            # Create and immediately deactivate a key
+            key = ApiKey.create("Inactive Key")
+            key.is_active = False
+            db.session.commit()
+            inactive_key = key.key
 
-    def test_can_delete_data_without_auth(self, client):
-        """Anyone can delete any snippet - destructive action unprotected."""
-        # Create then delete
-        create = client.post('/api/snippets', json={
-            'title': 'Temporary',
-            'code': 'x'
-        })
-        snippet_id = create.get_json()['id']
-
-        response = client.delete(f'/api/snippets/{snippet_id}')
-        assert response.status_code == 200
-        # Anyone can delete anything!
+        response = client.post('/api/snippets',
+            headers={'X-API-Key': inactive_key},
+            json={'title': 'Test', 'code': 'x'}
+        )
+        assert response.status_code == 401
+        assert 'Invalid API key' in response.get_json()['error']

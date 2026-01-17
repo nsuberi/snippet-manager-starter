@@ -2,17 +2,53 @@
 Snippet Manager API
 
 A simple REST API for storing and sharing code snippets.
+Requires API key authentication for write operations.
 """
 
+from functools import wraps
 from flask import Flask, request, jsonify
 from config import Config
-from models import db, Snippet, Tag, get_or_create_tag
+from models import db, Snippet, Tag, ApiKey, get_or_create_tag
 
 app = Flask(__name__)
 app.config.from_object(Config)
 
 # Initialize database
 db.init_app(app)
+
+
+# ---------------------------------------------------------------------------
+# Authentication
+# ---------------------------------------------------------------------------
+
+def require_api_key(f):
+    """
+    Decorator that requires a valid API key for the endpoint.
+
+    API key should be provided in the X-API-Key header.
+    """
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        api_key = request.headers.get('X-API-Key')
+
+        if not api_key:
+            return jsonify({
+                'error': 'API key required',
+                'message': 'Please provide an API key in the X-API-Key header'
+            }), 401
+
+        key_obj = ApiKey.validate(api_key)
+        if not key_obj:
+            return jsonify({
+                'error': 'Invalid API key',
+                'message': 'The provided API key is invalid or inactive'
+            }), 401
+
+        # Store the validated key in request context for potential use
+        request.api_key = key_obj
+        return f(*args, **kwargs)
+
+    return decorated
 
 
 # ---------------------------------------------------------------------------
@@ -82,6 +118,7 @@ def get_snippet(snippet_id):
 
 
 @app.route('/api/snippets', methods=['POST'])
+@require_api_key
 def create_snippet():
     """
     Create a new snippet.
@@ -135,6 +172,7 @@ def create_snippet():
 
 
 @app.route('/api/snippets/<int:snippet_id>', methods=['PUT'])
+@require_api_key
 def update_snippet(snippet_id):
     """
     Update an existing snippet.
@@ -182,6 +220,7 @@ def update_snippet(snippet_id):
 
 
 @app.route('/api/snippets/<int:snippet_id>', methods=['DELETE'])
+@require_api_key
 def delete_snippet(snippet_id):
     """Delete a snippet."""
     snippet = Snippet.query.get(snippet_id)
