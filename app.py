@@ -2,17 +2,70 @@
 Snippet Manager API
 
 A simple REST API for storing and sharing code snippets.
+Requires HTTP Basic Authentication for write operations.
 """
 
+import base64
+from functools import wraps
 from flask import Flask, request, jsonify
 from config import Config
-from models import db, Snippet, Tag, get_or_create_tag
+from models import db, Snippet, Tag, User, get_or_create_tag
 
 app = Flask(__name__)
 app.config.from_object(Config)
 
 # Initialize database
 db.init_app(app)
+
+
+# ---------------------------------------------------------------------------
+# Authentication
+# ---------------------------------------------------------------------------
+
+def require_basic_auth(f):
+    """
+    Decorator that requires HTTP Basic Authentication for the endpoint.
+
+    Credentials should be provided in the Authorization header:
+    Authorization: Basic base64(username:password)
+    """
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        auth_header = request.headers.get('Authorization')
+
+        if not auth_header:
+            return jsonify({
+                'error': 'Authentication required',
+                'message': 'Please provide credentials using HTTP Basic Authentication'
+            }), 401, {'WWW-Authenticate': 'Basic realm="Snippet Manager API"'}
+
+        # Parse the Authorization header
+        try:
+            auth_type, credentials = auth_header.split(' ', 1)
+            if auth_type.lower() != 'basic':
+                raise ValueError("Not Basic auth")
+
+            decoded = base64.b64decode(credentials).decode('utf-8')
+            username, password = decoded.split(':', 1)
+        except (ValueError, UnicodeDecodeError):
+            return jsonify({
+                'error': 'Invalid authorization header',
+                'message': 'Authorization header must be: Basic base64(username:password)'
+            }), 401, {'WWW-Authenticate': 'Basic realm="Snippet Manager API"'}
+
+        # Authenticate the user
+        user = User.authenticate(username, password)
+        if not user:
+            return jsonify({
+                'error': 'Invalid credentials',
+                'message': 'Username or password is incorrect'
+            }), 401, {'WWW-Authenticate': 'Basic realm="Snippet Manager API"'}
+
+        # Store the authenticated user in request context
+        request.current_user = user
+        return f(*args, **kwargs)
+
+    return decorated
 
 
 # ---------------------------------------------------------------------------
@@ -82,6 +135,7 @@ def get_snippet(snippet_id):
 
 
 @app.route('/api/snippets', methods=['POST'])
+@require_basic_auth
 def create_snippet():
     """
     Create a new snippet.
@@ -135,6 +189,7 @@ def create_snippet():
 
 
 @app.route('/api/snippets/<int:snippet_id>', methods=['PUT'])
+@require_basic_auth
 def update_snippet(snippet_id):
     """
     Update an existing snippet.
@@ -182,6 +237,7 @@ def update_snippet(snippet_id):
 
 
 @app.route('/api/snippets/<int:snippet_id>', methods=['DELETE'])
+@require_basic_auth
 def delete_snippet(snippet_id):
     """Delete a snippet."""
     snippet = Snippet.query.get(snippet_id)

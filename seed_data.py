@@ -12,7 +12,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from app import app, db
-from models import Snippet, Tag, get_or_create_tag
+from models import Snippet, Tag, User, get_or_create_tag
 
 
 SAMPLE_SNIPPETS = [
@@ -478,9 +478,18 @@ def seed_database():
 
     db.session.commit()
 
+    # Create a default user for testing
+    print("Creating test user...")
+    test_user = User.create("admin", "snippets123")
+    print(f"\n{'='*60}")
+    print("TEST CREDENTIALS:")
+    print(f"  Username: admin")
+    print(f"  Password: snippets123")
+    print(f"{'='*60}\n")
+
     snippet_count = Snippet.query.count()
     tag_count = Tag.query.count()
-    print(f"Done! Created {snippet_count} snippets and {tag_count} tags.")
+    print(f"Done! Created {snippet_count} snippets, {tag_count} tags, and 1 user.")
 
 
 def reset_database():

@@ -8,7 +8,7 @@ A simple REST API for storing and sharing code snippets. Built with Flask and SQ
 - Support for multiple programming languages with syntax highlighting metadata
 - Tag snippets for organization
 - Search snippets by title or language
-- Public snippet sharing via unique IDs
+- **HTTP Basic Authentication** for write operations (create, update, delete)
 
 ## Quick Start
 
@@ -31,7 +31,7 @@ pip install -r requirements.txt
 python seed_data.py
 ```
 
-This creates the SQLite database and populates it with sample snippets.
+This creates the SQLite database, populates it with sample snippets, and creates a test user. **Note the credentials displayed** - you'll need them for write operations.
 
 ### 4. Run the server
 
@@ -40,6 +40,49 @@ python app.py
 ```
 
 The API will be available at `http://localhost:5001`
+
+## Authentication
+
+Write operations (POST, PUT, DELETE) require HTTP Basic Authentication. Include credentials in the request:
+
+```bash
+# Using curl's -u flag (recommended)
+curl -u admin:snippets123 -X POST http://localhost:5001/api/snippets \
+  -H "Content-Type: application/json" \
+  -d '{"title": "Test", "code": "print(1)"}'
+
+# Or using the Authorization header directly
+curl -X POST http://localhost:5001/api/snippets \
+  -H "Authorization: Basic YWRtaW46c25pcHBldHMxMjM=" \
+  -H "Content-Type: application/json" \
+  -d '{"title": "Test", "code": "print(1)"}'
+```
+
+Read operations (GET) are public and do not require authentication.
+
+### Default Test Credentials
+
+After running `seed_data.py`:
+- **Username:** `admin`
+- **Password:** `snippets123`
+
+### Authentication Errors
+
+Missing credentials:
+```json
+{
+  "error": "Authentication required",
+  "message": "Please provide credentials using HTTP Basic Authentication"
+}
+```
+
+Invalid credentials:
+```json
+{
+  "error": "Invalid credentials",
+  "message": "Username or password is incorrect"
+}
+```
 
 ## API Endpoints
 
@@ -88,7 +131,7 @@ Request body:
 
 Example:
 ```bash
-curl -X POST http://localhost:5001/api/snippets \
+curl -u admin:snippets123 -X POST http://localhost:5001/api/snippets \
   -H "Content-Type: application/json" \
   -d '{"title": "Hello World", "code": "print(\"Hello!\")", "language": "python"}'
 ```
@@ -101,7 +144,7 @@ Content-Type: application/json
 
 Example:
 ```bash
-curl -X PUT http://localhost:5001/api/snippets/1 \
+curl -u admin:snippets123 -X PUT http://localhost:5001/api/snippets/1 \
   -H "Content-Type: application/json" \
   -d '{"title": "Updated Title"}'
 ```
@@ -113,7 +156,7 @@ DELETE /api/snippets/<id>
 
 Example:
 ```bash
-curl -X DELETE http://localhost:5001/api/snippets/3
+curl -u admin:snippets123 -X DELETE http://localhost:5001/api/snippets/3
 ```
 
 ### Get available languages
