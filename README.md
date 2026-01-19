@@ -8,7 +8,7 @@ A simple REST API for storing and sharing code snippets. Built with Flask and SQ
 - Support for multiple programming languages with syntax highlighting metadata
 - Tag snippets for organization
 - Search snippets by title or language
-- Public snippet sharing via unique IDs
+- **API key authentication** for write operations (create, update, delete)
 
 ## Quick Start
 
@@ -31,7 +31,7 @@ pip install -r requirements.txt
 python seed_data.py
 ```
 
-This creates the SQLite database and populates it with sample snippets.
+This creates the SQLite database, populates it with sample snippets, and generates a test API key. **Save the API key that is displayed** - you'll need it for write operations.
 
 ### 4. Run the server
 
@@ -40,6 +40,37 @@ python app.py
 ```
 
 The API will be available at `http://localhost:5001`
+
+## Authentication
+
+Write operations (POST, PUT, DELETE) require an API key. Include it in the `X-API-Key` header:
+
+```bash
+curl -X POST http://localhost:5001/api/snippets \
+  -H "X-API-Key: your-api-key-here" \
+  -H "Content-Type: application/json" \
+  -d '{"title": "Test", "code": "print(1)"}'
+```
+
+Read operations (GET) are public and do not require authentication.
+
+### Authentication Errors
+
+Missing API key:
+```json
+{
+  "error": "API key required",
+  "message": "Please provide an API key in the X-API-Key header"
+}
+```
+
+Invalid API key:
+```json
+{
+  "error": "Invalid API key",
+  "message": "The provided API key is invalid or inactive"
+}
+```
 
 ## API Endpoints
 
@@ -89,6 +120,7 @@ Request body:
 Example:
 ```bash
 curl -X POST http://localhost:5001/api/snippets \
+  -H "X-API-Key: your-api-key-here" \
   -H "Content-Type: application/json" \
   -d '{"title": "Hello World", "code": "print(\"Hello!\")", "language": "python"}'
 ```
@@ -102,6 +134,7 @@ Content-Type: application/json
 Example:
 ```bash
 curl -X PUT http://localhost:5001/api/snippets/1 \
+  -H "X-API-Key: your-api-key-here" \
   -H "Content-Type: application/json" \
   -d '{"title": "Updated Title"}'
 ```
@@ -113,7 +146,8 @@ DELETE /api/snippets/<id>
 
 Example:
 ```bash
-curl -X DELETE http://localhost:5001/api/snippets/3
+curl -X DELETE http://localhost:5001/api/snippets/3 \
+  -H "X-API-Key: your-api-key-here"
 ```
 
 ### Get available languages
